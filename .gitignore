@@ -1,0 +1,10 @@
+﻿# 依赖
+node_modules/
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+*.log
+
+# DSH 本地杂项
+*.cmd

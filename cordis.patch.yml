@@ -1,0 +1,8 @@
+# dsh-lan-accessor bundle layer: inserts the LAN-access plugin row.
+- insert:
+    - id: dsh-lan-accessor
+      name: 'dsh-lan-accessor'
+      config:
+        # resetOnBoot: forward-to-LAN is OFF after every DSH restart.
+        # Set to false to keep LAN access enabled across restarts.
+        resetOnBoot: true
