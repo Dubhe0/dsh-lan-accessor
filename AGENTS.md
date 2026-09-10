@@ -9,9 +9,22 @@
 ## 0. 这个插件是什么
 
 - 名字：`dsh-lan-accessor`
-- 作用：在 DSH Web 界面的会话标题栏加一个「📡 转发至局域网」开关。打开后，手机/同网段设备就能通过 `http://<本机IP>:3080` 访问、操作这台电脑上的 DSH。
-- 它只管理**本机**的防火墙入站规则（`DSH-LAN-<port>`），并通过 `ws.tapIndex` 给 HTML 注入 `crypto.randomUUID` polyfill，让手机经 HTTP（非安全上下文）访问时不会报 `crypto.randomUUID is not a function`。
+- 作用：在 DSH Web 界面的会话标题栏加一个「📡 转发至局域网」开关。打开后，手机/同网段设备就能通过 `http://<本机IP>:<端口>` 访问、操作这台电脑上的 DSH。
 - **纯本地插件**：没有任何外联/回传/指纹。安装它只是让"它装的这台 DSH"管理它自己这台电脑的局域网开放。
+
+### ⚠️ 它做两件事，缺一不可（这是最容易装错的地方）
+
+1. **把 DSH 的 webserver 绑定到 `0.0.0.0`**（监听所有网卡）—— 由本插件自带的 bundle patch 完成。
+   - **为什么必须**：DSH 默认只监听 `127.0.0.1`（回环），**任何手机/局域网设备都无法访问**。光开防火墙没有用。
+   - **DSH 禁止 `--host 0.0.0.0`**：CLI 会直接报错拒绝（官方出于安全考虑）。但 **webserver 的 config schema 允许 `0.0.0.0`**，所以插件用**配置层 patch**（`cordis.patch.yml` 里针对 `webserver` 行的覆盖）来实现——**这是官方支持的正当方式，不是 hack**。
+   - 绑定 `0.0.0.0` 后，DSH 的 `resolveLanTrust` 会**自动把当前网卡的真实 IP** 加入 `/api` 浏览器信任栅栏，所以**换 WiFi / 换 IP 也不会被 403 拦掉**。
+2. **管理防火墙入站规则**（`DSH-LAN-<port>`）—— 由界面上的开关控制。
+   - 只有放行了这条规则，局域网流量才能穿过 Windows 防火墙到达 DSH。
+   - `resetOnBoot`（默认开启）：每次重启 DSH 后自动把开关**关掉**，避免局域网长期敞开。
+
+### 🔴 因此：`dsh-lan-accessor` 必须排在 `dsh.profile.bundles` 的**最后一位**
+
+bundle patch 是**按 bundles 数组顺序叠加、后面的覆盖前面的**。本插件要覆盖 `@deepseek-ai/dsh-web-app` 对 `webserver` 行的配置（把 host 从 `127.0.0.1` 改成 `0.0.0.0`），所以**必须列在 web-app 之后**。若排在前面，它的 patch 会被 web-app 覆盖回去 → **手机永远连不上**。
 
 ---
 
@@ -55,8 +68,8 @@ pnpm add "<PHUGIN_ROOT>"
 - `<PHUGIN_ROOT>` 请用**绝对路径**（避免相对路径歧义）。
 - 也可以 `pnpm add file:"<PHUGIN_ROOT>"` 或 `pnpm add link:"<PHUGIN_ROOT>"`（开发模式，改动即生效）。
 
-### 步骤 2.3 — 把它登记进 profile 的 bundles 清单
-DSH 按 `profile/package.json` 的 `dsh.profile.bundles` 数组来加载插件层。pnpm 装完**不一定**自动登记它（只有通过 `dsh plugin` 才会自动 reconcile）。**必须确保 `dsh-lan-accessor` 已出现在该数组里**：
+### 步骤 2.3 — 把它登记进 profile 的 bundles 清单（**必须放最后一位**）
+DSH 按 `profile/package.json` 的 `dsh.profile.bundles` 数组来加载插件层。pnpm 装完**不一定**自动登记它（只有通过 `dsh plugin` 才会自动 reconcile）。**必须确保 `dsh-lan-accessor` 已出现在该数组里，且在最后一位**（原因见第 0 节：它的 patch 要覆盖 web-app 对 `webserver` 的绑定）：
 
 编辑 `~/.dsh/profiles/web/package.json`，在
 ```json
@@ -119,11 +132,14 @@ DSH 的 `runPlugin` 会：在该 profile 里跑 pnpm → 若有包声明 `dsh.bu
 
 | 检查 | 通过条件 |
 |---|---|
-| 插件 in bundles | `dsh.profile.bundles` 含 `dsh-lan-accessor` |
+| 插件 in bundles | `dsh.profile.bundles` 含 `dsh-lan-accessor`，且**位于最后一位** |
+| webserver 已绑全网卡 | 启动日志里 `dsh web:` 的 LAN 行出现，或 `netstat -ano \| findstr LISTENING \| findstr :<端口>` 显示 **`0.0.0.0:<端口>`**（若是 `127.0.0.1:<端口>` 则绑定没生效） |
 | 文件齐全 | `node_modules\..\dsh-lan-accessor\src\index.js` 存在 |
-| 开关已注入 | 打开 Web 首页 `http://127.0.0.1:3080/`，HTML 里含 `dsh-lan-accessor` 相关脚本 OR 页面标题栏出现开关 |
-| /api 端点在线 | `Invoke-WebRequest http://127.0.0.1:3080/api/forward-lan` 返回 JSON `{"on":...,"lanIp":...,"port":...}` |
-| 局域网可达 | `Invoke-WebRequest http://<本机真实IP>:3080/` 返回 200 |
+| 开关已注入 | 打开 Web 首页，页面标题栏/会话标题栏出现「📡 转发至局域网」 |
+| /api 端点在线 | 请求 `/api/forward-lan` 返回 JSON `{"on":...,"lanIp":...,"lanIps":[...],"port":<真实端口>,"host":"0.0.0.0"}` |
+| 局域网可达 | 请求 `http://<本机真实IP>:<真实端口>/` 返回 200 |
+
+> **端口不要猜。** 以 `/api/forward-lan` 返回的 `port` 字段为准（插件读的是 webserver 实际监听端口，`--port` / `--port 0` 都正确）。界面上的"访问地址"也会显示真实端口。
 
 ---
 
@@ -132,8 +148,14 @@ DSH 的 `runPlugin` 会：在该 profile 里跑 pnpm → 若有包声明 `dsh.bu
 1. **`dsh web` 启动崩"entry missing waiting for service"** → 是 `src/client.js` 的 `exports.inject` 用了 npm 路径（如 `@deepseek-ai/dsh-client-ui-slots`）。改成 cordis 名 `["slots","locale"]` 后重开。
 2. **`pnpm` 找不到** → `npm i -g pnpm` 或用 `corepack enable pnpm`。
 3. **peer 依赖报错** → 本插件 `@deepseek-ai/dsh-client-locale`、`@deepseek-ai/dsh-host-webserver` 是 optional peer；用 `pnpm add` 时若报错，加 `--config.autoInstallPeers=false`。
-4. **手机连不上** → 先确认这是**真实局域网 IP**（`192.168.x.x`/`10.x`/`172.16-31.x`），不是 VPN 虚拟网卡 IP（这类显示如 `26.131.199.239` 是 Radmin VPN 之类，普通 WiFi 手机连不上）；再确认 DSH 仍绑定 `0.0.0.0`（若 profile 用了 `--host 127.0.0.1` 则只允许本机）。
-5. **换 WiFi 断连** → 确认插件 host 侧是"只管理防火墙"的版本（本包即是）。DSH 绑定 `0.0.0.0` + 自动信任当前网卡 IP 时，IP 变化会自适应。
+4. **手机连不上 / 提示"禁止绑定 0.0.0.0"** → 这是**绑定没生效**。按顺序排查：
+   - 确认 `dsh-lan-accessor` 在 `dsh.profile.bundles` 的**最后一位**（bundle patch 后来者覆盖前者；排在 web-app 前面就会被改回 `127.0.0.1`）。
+   - 确认 `node_modules/dsh-lan-accessor/cordis.patch.yml` 里有针对 `webserver` 行的 `host: !!js ctx.webStartup.host ?? '0.0.0.0'` 覆盖。
+   - **不要试图用 `dsh web --host 0.0.0.0`**：DSH 的 CLI 会**直接报错拒绝**（官方安全限制）。正确做法就是让本插件的配置层 patch 去绑定——配置层的 schema 是允许 `0.0.0.0` 的。
+   - 重启 `dsh web`，再用 `netstat` 确认监听地址是 `0.0.0.0`。
+5. **不知道手机该用哪个端口** → 访问 `http://127.0.0.1:<端口>/api/forward-lan`，读返回里的 `port` 字段；或用 `netstat -ano | findstr LISTENING | findstr dsh` 看实际端口。插件界面显示的地址已含真实端口。
+6. **手机连不上（IP 层面）** → 确认用的是**真实局域网 IP**（`192.168.x.x`/`10.x`/`172.16-31.x`），不是 VPN 虚拟网卡 IP（如 `26.131.199.239` 是 Radmin VPN 之类，普通 WiFi 手机连不上）。`/api/forward-lan` 的 `lanIps` 会列出全部网卡 IP 供参考。
+7. **换 WiFi 断连** → 正常，DSH 绑定 `0.0.0.0` 后会自动信任当前网卡 IP；重启 DSH 让它重新采样即可。
 
 ---
 

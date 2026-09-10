@@ -1,4 +1,4 @@
-﻿# 依赖
+# 依赖
 node_modules/
 
 # 系统/编辑器
@@ -8,3 +8,6 @@ Thumbs.db
 
 # DSH 本地杂项
 *.cmd
+
+# 打包产物（避免 zip 套 zip 被提交）
+*.zip

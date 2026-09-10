@@ -1,4 +1,28 @@
-# dsh-lan-accessor bundle layer: inserts the LAN-access plugin row.
+# dsh-lan-accessor bundle layer.
+#
+# ── 1) Bind DSH's webserver to ALL interfaces ──────────────────────────────
+# Without this, DSH listens on 127.0.0.1 only, so no phone/LAN device can ever
+# reach it — the firewall switch below would be useless. DSH's CLI refuses
+# `--host 0.0.0.0` for safety, but the webserver config schema accepts it, so
+# this config-layer patch is the supported way to enable LAN serving.
+#
+# Binding 0.0.0.0 also makes DSH's `resolveLanTrust` auto-derive the machine's
+# current LAN IP literals into the /api browser-trust fence, so the phone keeps
+# passing the fence even when the IP changes (new WiFi, new DHCP lease).
+#
+# An explicit `--host` still wins (`ctx.webStartup.host` is only set when the
+# flag is passed); otherwise this defaults to 0.0.0.0. A patch replaces the
+# target row's whole `config`, so `port` is restated below.
+#
+# NOTE: this row must be applied AFTER @deepseek-ai/dsh-web-app, i.e. list
+# `dsh-lan-accessor` at the END of `dsh.profile.bundles`.
+- id: webserver
+  inject: [webStartup]
+  config:
+    host: !!js ctx.webStartup.host ?? '0.0.0.0'
+    port: !!js ctx.webStartup.port ?? 3080
+
+# ── 2) Insert the plugin row (firewall switch + polyfill) ──────────────────
 - insert:
     - id: dsh-lan-accessor
       name: 'dsh-lan-accessor'

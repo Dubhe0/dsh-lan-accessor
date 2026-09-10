@@ -61,6 +61,8 @@ function ForwardLanToggle() {
   const [busy, setBusy] = (0, import_react.useState)(false);
   const [msg, setMsg] = (0, import_react.useState)("");
   const [lanIp, setLanIp] = (0, import_react.useState)("");
+  const [port, setPort] = (0, import_react.useState)(0);
+  const [host, setHost] = (0, import_react.useState)("");
   const popRef = (0, import_react.useRef)(null);
   const fetchState = (0, import_react.useCallback)(async () => {
     try {
@@ -68,6 +70,8 @@ function ForwardLanToggle() {
       const d = await r.json();
       setOn(!!d.on);
       if (d.lanIp) setLanIp(d.lanIp);
+      if (d.port) setPort(d.port);
+      setHost(d.host || "");
     } catch {
     }
   }, []);
@@ -101,6 +105,8 @@ function ForwardLanToggle() {
       }
       setOn(next);
       if (d.lanIp) setLanIp(d.lanIp);
+      if (d.port) setPort(d.port);
+      setHost(d.host || "");
     } catch (e) {
       setMsg("\u8BF7\u6C42\u5931\u8D25\uFF1A" + e.message);
     } finally {
@@ -123,10 +129,15 @@ function ForwardLanToggle() {
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { type: "button", className: "dsfl-switch", "data-on": on ? "true" : "false", onClick: toggle, disabled: busy, role: "switch", "aria-checked": on, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsfl-knob" }) })
         ] }),
+        host && host !== "0.0.0.0" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsfl-err", children: [
+          "DSH \u5F53\u524D\u53EA\u7ED1\u5B9A ",
+          host,
+          "\uFF08\u56DE\u73AF\uFF09\uFF0C\u624B\u673A\u8FDE\u4E0D\u4E0A\u3002\u8BF7\u786E\u4FDD\u672C\u63D2\u4EF6\u5217\u5728 dsh.profile.bundles \u672B\u5C3E\u540E\u91CD\u542F DSH\u3002"
+        ] }),
         lanIp && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsfl-meta", children: [
           "\u8BBF\u95EE\u5730\u5740\uFF1Ahttp://",
           lanIp,
-          ":3080"
+          port ? ":" + port : ""
         ] }),
         busy && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsfl-meta", children: "\u6267\u884C\u4E2D\uFF0C\u8BF7\u7559\u610F UAC \u63D0\u6743\u63D0\u793A\u2026" }),
         msg && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsfl-err", children: msg })

@@ -31,6 +31,8 @@ function ForwardLanToggle() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [lanIp, setLanIp] = useState('')
+  const [port, setPort] = useState(0)
+  const [host, setHost] = useState('')
   const popRef = useRef(null)
 
   const fetchState = useCallback(async () => {
@@ -39,6 +41,8 @@ function ForwardLanToggle() {
       const d = await r.json()
       setOn(!!d.on)
       if (d.lanIp) setLanIp(d.lanIp)
+      if (d.port) setPort(d.port)
+      setHost(d.host || '')
     } catch {}
   }, [])
 
@@ -67,6 +71,8 @@ function ForwardLanToggle() {
       else if (d.ok === false) { setMsg('操作未完全成功，可能需管理员权限') }
       setOn(next)
       if (d.lanIp) setLanIp(d.lanIp)
+      if (d.port) setPort(d.port)
+      setHost(d.host || '')
     } catch (e) {
       setMsg('请求失败：' + e.message)
     } finally {
@@ -93,7 +99,10 @@ function ForwardLanToggle() {
                 <span className="dsfl-knob"></span>
               </button>
             </div>
-            {lanIp && <div className="dsfl-meta">访问地址：http://{lanIp}:3080</div>}
+            {host && host !== '0.0.0.0' && (
+              <div className="dsfl-err">DSH 当前只绑定 {host}（回环），手机连不上。请确保本插件列在 dsh.profile.bundles 末尾后重启 DSH。</div>
+            )}
+            {lanIp && <div className="dsfl-meta">访问地址：http://{lanIp}{port ? ':' + port : ''}</div>}
             {busy && <div className="dsfl-meta">执行中，请留意 UAC 提权提示…</div>}
             {msg && <div className="dsfl-err">{msg}</div>}
           </div>

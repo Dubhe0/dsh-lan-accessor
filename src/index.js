@@ -46,8 +46,24 @@ function lanIPv4() {
   return all.find((ip) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) || all[0] || ''
 }
 
-function webPort() {
-  return Number(process.env.DSH_WEB_PORT || 3080) || 3080
+// Resolve the port the web server is ACTUALLY listening on. The plugin injects
+// `webServer`, whose `port` getter reports the OS-assigned port after bind, so
+// never hardcode 3080 — on a DSH started with `--port` or `--port 0` the real
+// port differs and a hardcoded one would build the wrong firewall rule and
+// show the phone the wrong address.
+function webPort(ws) {
+  const live = ws && typeof ws.port === 'number' && ws.port > 0 ? ws.port : 0
+  if (live) return live
+  const env = Number(process.env.DSH_WEB_PORT)
+  return Number.isFinite(env) && env > 0 ? env : 3080
+}
+
+// The host the web server bound to. '0.0.0.0' means LAN reachable; '127.0.0.1'
+// means loopback-only, in which case no phone can connect and the bundle patch
+// that binds all interfaces did not take effect (e.g. this row loaded before
+// @deepseek-ai/dsh-web-app, so its patch was overridden).
+function bindHost(ws) {
+  return ws && typeof ws.host === 'string' ? ws.host : ''
 }
 
 function ruleName(port) {
@@ -131,7 +147,7 @@ function readBody(req) {
 function apply(ctx, config = {}) {
   const ws = ctx.get('webServer')
   if (!ws) return
-  const port = webPort()
+  const port = webPort(ws)
 
   // resetOnBoot: "forward to LAN" defaults to OFF after every DSH restart.
   // Delete the inbound firewall rule at boot so the LAN is only reachable once
@@ -166,10 +182,14 @@ function apply(ctx, config = {}) {
     path: '/api/forward-lan',
     handler: async (req, res) => {
       const method = req.method || 'GET'
-      const lanIp = lanIPv4()
+      // Re-resolve per request so the answer always reflects the live bound
+      // port/host (never a hardcoded 3080).
+      const port = webPort(ws)
+      const host = bindHost(ws)
+      const base = { lanIp: lanIPv4(), lanIps: lanIPv4s(), port, host }
       if (method === 'GET') {
         const s = await queryFirewallState(port)
-        json(res, 200, s)
+        json(res, 200, { ...s, ...base })
         return
       }
       if (method === 'POST') {
@@ -178,7 +198,7 @@ function apply(ctx, config = {}) {
         if (!action) return json(res, 400, { ok: false, error: 'bad-action' })
         const r = await applyFirewall(port, action)
         const s = await queryFirewallState(port)
-        json(res, 200, { ok: r.ok, action, lanIp: r.lanIp || lanIp, port, ...(r.error ? { error: r.error } : {}), state: s })
+        json(res, 200, { ok: r.ok, action, ...base, lanIp: r.lanIp || base.lanIp, ...(r.error ? { error: r.error } : {}), state: s })
         return
       }
       json(res, 405, { ok: false, error: 'method-not-allowed' })
